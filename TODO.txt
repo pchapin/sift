@@ -1,0 +1,22 @@
+
+SIFT TODO List
+==============
+
++ Enhance the documentation by adding comments to the package specifications. This will help the
+  GNAT documentation tool produce more useful documentation (I think).
+
++ Generalize the existing tool so that it can use a lattice of security values.
+
++ Generalize the existing tool so that it can be used for both confidentiality and integrity
+  analysis.
+
++ Enhance the supporting graph handling packages in Spica
+
++ Consider adding some unit tests.
+
++ Begin removing the tool's many restrictions. It probably makes sense to do this in a way that
+  plays well with Ada's pragma Restrictions feature. For example, a first step might be bring
+  the tool to a place where it can be used with the SPARK subset of Ada. Then add support for
+  features that correspond to the removal of explicit restrictions on SPARK. This approach would
+  make the tool useful early (for example on SPARK programs) without requiring it to deal with
+  the complexity of full Ada.

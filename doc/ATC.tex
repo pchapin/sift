@@ -1,0 +1,356 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FILE         : ATC.tex
+% AUTHOR       : (C) Copyright 2005 by Peter C. Chapin
+% LAST REVISED : 2005-05-13
+% SUBJECT      : Documentation for the Ada Taint Checker
+%
+% ATC is a class project for CS-361, Software Analysis, at the University
+% of Vermont. Spring 2005.
+%
+% Send comments or bug reports to:
+%
+%       Peter C. Chapin
+%       University of Vermont
+%       Department of Computer Science
+%       Burlington, VT 05405
+%       pchapin@cem.uvm.edu
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%+++++++++++++++++++++++++++++++++
+% Preamble and global declarations
+%+++++++++++++++++++++++++++++++++
+\documentclass{article}
+%\documentclass[12pt]{article}
+
+% Common packages. Uncomment as needed.
+%\usepackage{amsmath}
+%\usepackage{amssymb}
+%\usepackage{amstext}
+%\usepackage{amsthm}
+%\usepackage{doublespace}
+%\usepackage{fullpage}
+%\usepackage[dvips]{graphics}
+%\usepackage{listings}
+%\usepackage{mathpartir}
+%\usepackage{url}
+%\usepackage{hyperref}
+
+% The following are settings for the listings package.
+%\lstset{language=Java,
+%        basicstyle=\small,
+%        stringstyle=\ttfamily,
+%        commentstyle=\ttfamily,
+%        xleftmargin=0.25in,
+%        showstringspaces=false}
+
+\setlength{\parindent}{0em}
+\setlength{\parskip}{1.75ex plus0.5ex minus0.5ex}
+
+%++++++++++++++++++++
+% The document itself
+%++++++++++++++++++++
+\begin{document}
+
+%-----------------------
+% Title page information
+%-----------------------
+\title{Ada Taint Checker}
+\author{\copyright\ 2005 by Peter C. Chapin}
+\date{May 13, 2005}
+\maketitle
+
+\section{Background}
+
+Two major goals of security are maintaining the confidentiality of private data and maintaining the integrity of private data. When writing secure software, these goals can be cast in terms of information flow. A program can be said to maintain the confidentiality of its private inputs if an attacker who observes the program's public outputs is unable to deduce any private information. In particular, arbitrary changes to the program's private inputs should cause no observable change to the program's public outputs. This is the principle of noninterference \cite{Sabelfield:2003-01}, \cite{Huang:2004}.
+
+Data integrity is the dual of confidentiality. To insure that an attacker is unable to overwrite private data with information controlled by the attacker, a program must not propagate information from its public inputs to its private outputs. The principle of noninterference applies here as well. Followed strictly, noninterference sets up a barrier between a program's private inputs and outputs and its public inputs and outputs.
+
+Real programs can not function as intended and still follow a strict policy of noninterference. If a program could follow strict noninterference, it could be split into two completely independent programs. However, most programs of interest do wish to allow \emph{some} information to leak from private inputs to public outputs and visa-versa. To allow this, the private inputs have to go through an obfuscation procedure that makes it infeasible for the attacker to learn anything useful from the public outputs. Similarly the public inputs have to go through a sanitizing procedure to insure that the input data is semantically reasonable before it is written to the private outputs.
+
+It is important that the obfuscation and sanitizing procedures be designed with the high level semantics of the program and with the system designer's security policy in mind. Exactly what constitutes acceptable obfuscation or sanitization is not something that can be deduced outside of a specific security context.
+
+For example, many programming languages do rudimentary validation of input values by enforcing constraints on the types involved. In Ada one can define an \texttt{Age\_Type} and constrain it to contain only values consistent with meaningful ages. However, true sanitization will generally require considering the semantic significance of the input data in a wider context. An input age of 12 might be acceptable to the constraint checking for \texttt{Age\_Type}. Yet such an age would be suspect if it is inconsistent with the ages of the individual's parents---perhaps as looked up in an external database. Simple programming language mechanisms can not directly deal with these isses; only the system designer can specify when a program's inputs have been properly sanitized.
+
+So far in this discussion I've used two different security classes that I've called ``private'' and ``public.'' More generally, however, there might be many different security classes of interest \cite{Denning:1976-05}. We can speak of a set of these classes, $\mathcal{C} = \{ S_1, S_2, \ldots, S_n\}$, together with a partial ordering, $\le$, such that $S_1 \le S_2$ means information in security class $S_1$ is more sensitive than information in security class $S_2$. The pair $(\mathcal{C}, \le)$ forms a lattice where $\bot$ is the most sensitive security class and $\top$ is represents completely public information.
+
+As a program executes information from different security classes interacts. For example, a binary operator might process data from the classes $S_i$ and $S_j$. If confidentiality is the concern, the result will have a security class given by the lattice's meet operation, $S_i \wedge S_j$. If data integrity is the concern, the result will have a security class given by the lattice's join operation, $S_i \vee S_j$. In addition certain operations, as specified by the programmer, will output results directly to a particular security class regardless of the class used in the inputs.
+
+\section{Project Scope}
+
+My project is a static taint checker for Ada programs called ``Ada Taint Checker'' (ATC). ATC is only concerned with the issue of data integrity using two security classes: tainted and untainted. ATC tracks tainted input data and ensures that it does not reach any of the program's outputs without first being sanitized. ATC does not consider confidentiality issues at all.
+
+ATC is a static checker. The advantage of static checking is that it does not interfere with the runtime performance of the program. It also has the potential of checking all possible program execution paths rather than just those that happen to be executed during testing. The disadvantage of static checking is that it is imprecise\footnote{Interesting security properties, like most program properties, are undecidable. An analysis algorithm that always terminates cannot possibly deliver the correct answer in all cases.}; ATC will consider some execution paths that can't actually occur. ATC attempts to be conservatively imprecise in the sense that it tries always produce a warning if the target program violates the desired security property (ATC is sound) but, it may produce spurious warnings for some programs that are actually secure (ATC is incomplete). Obviously the goal is to reduce the rate of spurious warnings to a low enough level so that useful programs can be written without eliciting an excessive number of spurious warnings.
+
+There are two basic techniques used in the literature for analyzing secure information flow in software. One technique is to use type systems to assign to each variable an associated security type \cite{Volpano:1996-01}, \cite{Volpano:1997}. If a program is then well typed then the desired security properties are satisfied. The other technique is to use data flow analysis to track the movement of sensitive data through the program \cite{Andrews:1980-01}, \cite{Banatre:1994}. ATC uses a intra-procedural data flow analysis and a simplistic type system to summarize the effects of each procedure and to transmit information from one procedure to another.
+
+\section{Theory of Operation}
+
+In Ada subprograms\footnote{An Ada subprogram is either a procedure or a function.} are normally enclosed in packages. However, the Ada language does allow stand-alone subprograms to be created. The current version of ATC assumes that it will be processing a compilation unit consisting of a single subprogram. The IN parameters of the subprogram are taken to be the tainted inputs of the system. The OUT parameters of a procedure or the return value of a function are taken to be the untainted outputs.
+
+Since most realistic programs make extensive use of library subprograms, and since Ada formally regards the use of built-in operators as subprogram calls, it is essential that ATC have some useful way of handling such calls. Once the effects of called subprograms are understood ATC can procedure with the local (intra-procedural) analysis of the main subprogram that is its focus. In the sections that follow these issues are discussed in more detail.
+
+\subsection{Subprogram Classifications}
+
+ATC must understand how to interpret calls to other subprograms that are made by the subprogram being analyzed. In particular, ATC needs to know what it can assume about the outputs of these subprograms and it needs to know if it is an error to send tainted data to these subprograms.
+
+To deal with this problem ATC assigns a classified, or ``type,'' to each subprogram. This type information summarizes the behavior of the subprogram with respect to its effects on tainted data. Use such summaries, ATC avoids doing costly inter-procedural dataflow analysis. The classifications ATC uses are defined below.
+
+\begin{itemize}
+
+\item \textit{Input}. An input subprogram is one which returns tainted data regardless of the status of its arguments. The information returned by such a subprogram may have come from a place with unknown security properties or may have been read from the program's inputs.
+
+\item \textit{Sanitizing}. A sanitizing subprogram is one which returns untainted data regardless of the status of its arguments.
+
+\item \textit{Passive}. A passive subprogram is one which returns information with the same tainting status as its arguments. If it is given tainted data, it returns tainted data. If it is given untainted data, it returns untainted data.
+
+\end{itemize}
+
+In addition ATC marks some subprograms with an ``Output'' flag. An Output subprogram is one for which it is an error to send tainted data. It is important to note that the Output flag is independent from, and different than, the subprogram's classification. The Output flag is not used during the analysis, per se, but is only used after the analysis is complete to check for possible security violations.
+
+The current version of ATC allows the programmer to specify the classification and Output flag for subprograms using an external configuration file. The program does not need have to add annotations to the program itself.
+
+To minimize the burden on the programmer when making the ATC configuration file, ATC will use a default classification for subprograms that are not specified by the programmer. The most conservative approach would be to treat unspecified subprograms as \textit{Input, Output}. Such subprograms can't accept tainted arguments and always return tainted results. The problem with this approach is the large number of spurious warnings it will produce when ATC is applied to programs with mostly unspecified subprograms.
+
+A more practical approach is to assume that all unspecified subprograms are \textit{Passive}. This choice allows data, once untainted, to move freely through the program but it doesn't cause known tainted data to be sanitized without first going through an explicitly specified sanitization procedure. The current version of ATC uses this ``passive by default'' policy.
+
+The choice of \textit{Passive} as a default classification is intuitive when one considers the operation of various built-in operators. For example consider a statement such as
+
+\begin{verbatim}
+A := B + C;
+\end{verbatim}
+
+It is natural to take \texttt{A} as tainted if either \texttt{B} or \texttt{C} is tainted and to take \texttt{A} as untainted if both \texttt{B} and \texttt{C} are untainted. This is the same as saying that the built-in function
+
+\vspace{1.0ex}
+\centerline{\texttt{function "+"(L : Integer; R : Integer) return Integer;}}
+
+is \textit{Passive}. The highly conservative approach of taking procedures as \textit{Input, Output} by default would mean that neither \texttt{B} nor \texttt{C} could ever be tainted and yet \texttt{A} would always be tainted. Clearly such an approach would be highly impractical in general.
+
+Of course ATC could be designed to regard the built-in operators as \textit{Passive} and all user-defined procedures as \textit{Input, Output}. However, considering that Ada emphasizes the creation of abstract types it seems inappropriate to treat the built-in operators differently than user-defined overloaded operators. This is particularly true considering that Ada allows user-defined operators for the built-in types.
+
+Note that subprograms without side effects are inherently \textit{Passive}. Although ATC does not currently do this, it could be modified to notice ``pure'' subprograms and apply a different default to them. It is also interesting to notice that ATC, in effect, verifies that the subprogram it is analyzing is \textit{Sanitizing}. This is reasonable; for an entire program to be secure, its main procedure must be \textit{Sanitizing}. Such a program only writes untainted data to its outputs. An extended version of ATC, however, might instead analyze a subprogram to verify that it indeed has the classification specified by the programmer. Thus ATC can be regarded as a kind of type checker for subprogram's taint classification.
+
+The \textit{Passive} classification is where ATC implements the lattice join operation. In the current implementation, this join is simple: if \emph{any} inputs are tainted the output is tainted. However, if ATC is extended to support additional security classes, the handling of \textit{Passive} subprograms would need to implement the more elaborate join of the new lattice. Additional subprogram classifications would also be needed to describe subprograms that output to the added security classes unconditionally.
+
+\subsection{Dataflow Equations}
+
+The intra-procedural analysis, the heart of ATC, is its dataflow analysis. This is done in a largely traditional way. The subprogram being analyzed is parsed (by ASIS) and a control flow graph (CFG) of it is made. In the current implementation each statement is made into a separate node in the CFG. This increases the number of CFG nodes and slows the analysis, but it was simpler to implement. Combining nodes in the same basic block could be done, however, it would not change the general approach described here.
+
+I introduce four functions $f : \mathcal{N} \rightarrow \mathcal{P}(V)$ where the domain of $f$ is an index over the nodes of the CFG and the range of $f$ is the power set of the set of variables used in the subprogram. The specific functions are defined as follows, using the traditional notation of square brackets to enclose the function arguments\footnote{One can regard these functions as arrays of sets.}.
+
+\begin{itemize}
+
+\item Input, $I[n]$. The set of tainted variables coming into CFG node $n$.
+
+\item Output, $O[n]$. The set of tainted variables coming out of CFG node $n$.
+
+\item Dirty, $D[n]$. The set of variables that are made tainted inside CFG node $n$. These are the variables that are written by \textit{Input} subprograms or by \textit{Passive} subprograms with tainted inputs.
+
+\item Cleansed, $C[n]$. The set of variables that are sanitized inside CFG node $n$. These are the variables that are written by \textit{Sanitizing} subprograms or by \textit{Passive} subprograms with untainted inputs.
+
+\end{itemize}
+
+The dataflow equations are then
+
+\begin{eqnarray*}
+I[n] & = & \bigcup_{p\, \in \mbox{\textit{\small pred}}[n]} O[p] \\
+O[n] & = & D[n] \cup (I[n] - C[n])
+\end{eqnarray*}
+
+The value of $I$ for the initial node is given by the subprogram's input arguments. These equations are solved in the usual iterative manner. The subprogram is considered secure if the following are both true
+
+\begin{enumerate}
+\item None of the subprogram's outputs are in $O$ for the final CFG node.
+\item For each node in the CFG, no input to a \textit{Output} subprogram is in the $I$ set for that node.
+\end{enumerate}
+
+\section{Implementation}
+
+I choose to analyze programs written in the Ada programming language primarly because Ada provides the Ada Semantic Interface Specification (ASIS). An Ada compiler that supports the ASIS standard, such as the freely available GNAT compiler, provides a way to write some of the internal data structures it creates while compiling a program to a file. The ASIS library then provides a convenient interface to those data structures. Using ASIS, an analysis program need not parse the Ada source text nor build ``standard'' data structures such as abstract syntax trees. Instead an analysis program can capitalize on the work already done by the compiler. This makes writing useful analysis programs in Ada easier than would be the case in similar languages that don't support this facility (for example, C++).
+
+However, Ada is a rich language with many complex features. Building an analysis program that handles all of Ada's features would be a large and difficult task even with ASIS's help. ATC currently only supports a rather small subset of Ada and only analyzes a single subprogram containing basic control structures and expression forms. At the time of this writing ATC is only a ``proof-of-concept'' rather than a useful tool.
+
+ATC operates in two phases. During the first phase it walks the target subprogram's abstract syntax tree and builds a control flow graph for that subprogram. Currently ATC puts each statement in the target subprogram into its own CFG node. It does not attempt to summarize an entire basic block into a single node. This increases the number of CFG nodes that need to be processed during the dataflow analysis and slows the analysis down. However, summarizing basic blocks in ATC would be difficult. The taintedness of an expression depends on what variables are tainted immediately before that expression. The dirty and clean sets for a CFG node can't be precomputed. Summarizing a basic block would require computing a unique function for each block that relates the dirty and clean sets for that block to the block's input tainted variables. This state of affairs is a consequence of the \textit{Passive} subprograms\footnote{In a traditional dataflow analysis, the set of variables that are generated or killed in a node is not a function of the variables in the node's input set.}.
+
+ATC must recompute the dirty and clean sets for a node for every iteration of the dataflow analysis. This is straightforward to do when a node contains a single statement because Ada constrains the way variables might be updated in one statement.
+
+ATC constructs the CFG by tracking a ``current vertex'' and attaching new verticies to this vertex. Control structures, such as loops, that have nested statements keep track of certain verticies and then recursively process the enclosed statements. Once the CFG components for the enclosed statements have been created and attached to the existing graph, the processing of the enclosing statement continues and adds the necessary additional verticies and edges to realize the flow it represents. This approach depends on the subprogram being well structured but, since Ada lacks a goto statement, that is not a serious problem\footnote{ATC currently does not support Ada's \texttt{exit} statement.}.
+
+Although most CFG verticies contain Ada statements, the verticies representing the predicates in while loops and if statements contain expressions. Also the verticies representing the control of a for loop contain declarations. Finally some verticies contain null data (the ASIS \texttt{Nil\_Element}). These verticies are added to handle certain control structures and are an artifact of the way ATC builds its CFG. The dataflow analysis must be prepared to handle these various possibilities when it processes a vertex.
+
+After the CFG is constructed, ATC executes the dataflow analysis. This causes it to repeatedly evaluate the taintedness of various expressions given the set of known tainted variables at that program point. The function \texttt{Is\_Tainted} in package \texttt{Expression\_Processing} handles this. Each supported expression form is processed in a separate case inside \texttt{Is\_Tainted}. If the expression form is a function call---and this case handles many expressions since built-in operators are a form of function call---the classification of the called function is looked up and the result is used in the taintedness evaluation. For \textit{Passive} functions, \texttt{Is\_Tainted} recursively calls itself to consider the taintedness of the function's arguments. This is where the lattice join operation is implemented; if \emph{any} of the arguments are tainted, the \textit{Passive} function is taken to return a tainted result.
+
+Procedure calls are handled similarly to function calls (except that they are statements). However, unlike function calls, ATC must look up the corresponding procedure declaration and check the parameter modes. Ada procedures allow variables used as arguments to be modified via OUT or INOUT parameters. ATC needs to track this activity so that it can properly compute the clean and dirty sets associated with the procedure call statement.
+
+Finally, when the analysis is complete ATC passes over the CFG and checks if any tainted variables are sent to a subprogram marked with the \textit{Output} flag. This is where ATC generates its warning messages. It also verifies that none of the subprogram's outputs are in the set of variables tainted in the CFG's final vertex.
+
+\section{Limitations}
+
+The current version of ATC suffers from a number of limitations that make it much less useful than it could be. In this section I will discuss some of these limitations and comment on how they might be removed.
+
+\subsection{Single Subprogram Analysis}
+
+Currently ATC can only analyze a single subprogram. It can not handle packages nor subprograms nested in the declarative region of another subprogram.
+
+A more powerful version of ATC might instead deduce the classification of the subprogram it is analyzing. Applying the analysis twice, once assuming all inputs are tainted and again assuming that all inputs are untainted, would, I believe, allow such a deduction to be done. ATC could then add the deduced classification information to its internal database, augmenting the information provided by the programmer. In this way ATC could analyze all the subprograms in the overall program, proceeding from the bottom up, using the classification information deduced for lower level subprograms during the analysis of higher level subprograms.
+
+For example consider the following:
+
+\begin{verbatim}
+procedure Outer is
+  function Inner(A : Integer) return Integer is ...
+    -- Deduce the classification for Inner.
+begin
+  X := Inner(Y); -- Use deduced classification here.
+end Outer;
+\end{verbatim}
+
+Here ATC might first analyze \texttt{Outer.Inner} and then use the result of that analysis when analyzing \texttt{Inner}. Extending this to the entire program seems straightfoward:
+
+\begin{verbatim}
+with Ada.Text_IO;
+with Numerics.Extended_Integer;
+with Crypto.Hashes;
+  -- Analyze all subprograms in these packages.
+
+procedure Main is
+begin
+  -- Analyze Main using information collected previously.
+end Main;
+\end{verbatim}
+
+Of course ATC would continue to read the subprogram information provided by the programmer. Such information could be used to prune ATC's processing and should provide a way to separately analyze compilation units. Alternatively ATC might check the programmer's declarations and produce warning messages if any inconsistency is found.
+
+In effect, ATC would be doing a type inferencing operation on all the subprograms instead of merely doing a type checking operation. Type inferencing is fairly well understood and some of the algorithms and issues known in that field would no doubt apply here.
+
+\subsection{Incomplete Support for Statements and Expressions}
+
+Currently ATC only understands a very limited subset of Ada's statment and expression forms. It does not know how to process arrays, records, attribute expressions, short circuit expressions, or type conversions, to name a few. It can build a CFG for subprograms containing \texttt{for} loops, but it does not know how to handle the declaration at the top of the loop. Similarly ATC recognizes the \texttt{loop} construct, but not the \texttt{exit} statement used to terminate general looping structures.
+
+Many of the missing statement and expression forms could be easily added, although some of them would require some work to handle properly.
+
+\subsection{Mishandles Named Parameter Associations}
+
+Currently ATC assumes that the actual parameters used in a subprogram call appear in the same order as the formal parameters are declared in the subprogram's declaration. In general, this is not true. For example:
+
+\begin{verbatim}
+procedure Proc(A : Integer; B : Integer; C : Integer := 0);
+...
+Proc(B => 2, A => 1);
+\end{verbatim}
+
+ATC will incorrectlly associate the expression \texttt{2} with the parameter \texttt{A} and the expression \texttt{1} with the parameter \texttt{B}. Furthermore ATC will not be aware of the default argument.
+
+ASIS provides a ``normalized'' parameter association list that makes handling this case easy. However, ASIS-for-GNAT does not support this feature. ATC could manually untangle the associations, but currently does not do so.
+
+\subsection{Control Dependencies}
+
+Currently ATC ignores issues surrounding control dependencies. Consider the following example:
+
+\begin{verbatim}
+if X < Y then
+  A := 1;
+else
+  A := 2;
+end if;
+\end{verbatim}
+
+If \texttt{X < Y} has a tainted value that means the user can control which branch of the \texttt{if} statement executes. Thus the user can control, or at least influence, the value stored in \texttt{A}. After the \texttt{if} statement, \texttt{A} should be taken as tainted.
+
+ATC should regard any variable written under the control of a tainted predicate as tainted. However, it does not do so.
+
+\section{Future Work}
+
+There are a number of Ada features that ATC does not currently even attempt to consider. Proper handling of these features would be, in many cases, quite complicated. In this section I will discuss a few of the issues raised by these features and comment on how ATC might, in principle, be extended to handle them.
+
+\subsection{Indirect Subprogram Invocation}
+
+Ada 95 supports dynamic polymorphism by ``dispatching'' subprograms. In addition Ada 95 supports subprogram access types (pointers to subprograms). When these features are used, the precise subprogram being called is not evident from the source text. This creates a problem for ATC since it needs to know the taint classification of every subprogram used in order to evaluate its taint effects on the variables it reads and writes.
+
+ATC could handle the polymorphic case by requiring that all subprograms that might dispatch to each other have the same classification. ATC could check this constraint during the analysis of the subprograms (here I assume ATC has already been extended to handle multi-subprogram analysis), and produce a warning if some inconsistency is found.
+
+The case of subprogram access types is more difficult because it would be unreasonable to require that every subprogram with the same parameter-return profile have the same taint classification. Instead ATC would have to associate a taint classification with the access type (perhaps with the help of programmer annotations) and then verify that only the addresses of appropriate subprograms are stored in the corresponding access variables. The issue of type checking versues type inference arises here as well: a more powerful version of ATC might attempt to deduce the taint classification of a subprogram access type by observing how it is used rather than require the programmer to annotate the type.
+
+\subsection{Exceptions}
+
+Exceptions complicate control flow. They frustrate ATC's attempt to summarize the effects of a subprogram since control can jump, somewhat arbitrarly, out of a subprogram and into that subprogram's calling environment. Consider the following example:
+
+\begin{verbatim}
+begin
+  Get(A);          -- A is tainted.
+  Do_Something;
+  A := Clean(A);   -- A is not tainted.
+  Do_Something_Else;
+exception
+  when Constraint_Error =>
+    Put(A);        -- Is A tainted?
+end;
+\end{verbatim}
+
+One way to handle exceptions would be to first do the analysis without regard to them. Afterwards, the statements in the exception blocks could be analyzed under the assumption that if a variable is tainted \emph{anywhere} in the corresponding normal block, then it is taken as initially tainted in the exception block. Such an assumption is inaccurate, but conservative.
+
+\subsection{Dynamically Defined Subtypes}
+
+Although Ada requires that entirely new types be statically defined, Ada does allow subtypes to be defined using dynamically computed information. This raises the possibility that a type could be defined using tainted data. Consider the following example:
+
+\begin{verbatim}
+A : Integer := Read_A;
+subtype Restricted_Type is Integer range 0..A;
+X : Restricted_Type := 10;
+\end{verbatim}
+
+Here the tainted value \texttt{A} is used to define the subtype \texttt{Restricted\_Type}. Ada inserts run-time checks to ensure that no value stored in a variable of the subtype is outside of that subtype's range. However, if a malicious user can manipulate the value of \texttt{A} at will, then that user can control the subtype's range and thus either force exceptions to occur that otherwise shouldn't or prevent an exception from occuring that otherwise should.
+
+To handle this ATC would have to mark the type itself as tainted. It would then have to regard any value of that type as tainted regardless of where that value came from. Continuing the example above;
+
+\begin{verbatim}
+X := Clean(M + N);
+\end{verbatim}
+
+Even if \texttt{Clean} is \textit{Sanitizing}, the value stored in \texttt{X} must be considered tainted. This is because the assignment to \texttt{X} might have normally caused an exception and yet now will not due to the tainted nature of \texttt{Restricted\_Type}.
+
+\subsection{Access Types}
+
+Like most languages, Ada provides a way to dynamically allocate objects on the heap. Such objects are manipulated through access variables---pointers. For example:
+
+\begin{verbatim}
+type Integer_Ptr is access Integer;
+P1 : Integer_Ptr := new Integer'(1);
+P2 : Integer_Ptr := P1;
+...
+P1.all := Read_Value;  -- Now P2.all is tainted.
+\end{verbatim}
+
+Pointers introduce the possibility of aliasing; a large subject in itself. Now several different expressions might refer to the same object. In addition, the objects manipulated by the program are no longer just those explicitly declared in the program text. For ATC to deal with these issues, some sort of alias analysis needs to be added and the notion of ``variable'' needs to be expanded to include the anonymous objects that are dynamically allocated. Such enhancements are not trivial.
+
+\subsection{Generic Units}
+
+Ada generics provide a way to generate an open ended set of related program units from a parameterized template\footnote{Ada generics are similar to C++ templates}. For example:
+
+\begin{verbatim}
+generic
+  with procedure Error_Handler(Message : String);
+  type Restricted_Type is range <>;
+package Whatever is
+  ...
+end Whatever;
+\end{verbatim}
+
+Different instantiations of package \texttt{Whatever} use (potentially) different procedures for the generic formal parameter \texttt{Error\_Handler} and different types for the generic formal parameter \texttt{Restricted\_Type}. Since the generic unit can be instantiated with procedures with different taint classifications, the various instantiations might differ in their taint effects as well. Similarly if types can be tainted, the type parameters used to instantiate a generic might also affect its taint effects.
+
+Since generics are processed at compile time, unlike dispatching subprogram calls, ATC could in principle analyze each instantiation separately. The instantiations are independent, named program units that are distinct from each other so there shouldn't be any problem in handling them independently, at least in principle.
+
+\subsection{Tasking}
+
+Concurrency always tends to add complications for analysis programs and ATC is no different in that regard. However, Ada's rendezvous model may make it possible for a relatively simplistic approach to suffice for some cases. Since an entry call looks in many ways like an ordinary procedure call, ATC might be able to assign taint classifications to entries in a way similar to the way it would for normal procedures. It may even be possible to deduce an appropriate classification based on the corresponding accept statements.
+
+However, tasks in Ada 95 can interact in other ways besides making rendezvous. The potential of asychronous modification of shared variables would make tracking tainted data using a dataflow analysis much more difficult. The potential ways the tasks involved might interleave would need to be considered. Like aliasing, concurrent program analysis is a large subject. ATC would have to borrow ideas from that field if it wanted to extend its analysis to such programs.
+
+\section{Conclusion}
+
+Although the current version of ATC is extremely limited, the tool is starting to show some promise. An enhanced version of ATC that could process multiple subprograms---such as an entire package---in a single run would be much more useful. Plenty of interesting work remains both to remove the limitations of the current implementation as well as to extend ATC for greater coverage of Ada features. Providing support for multiple security classes or modifying ATC to also support a confidentiality analysis would also be interesting.
+
+\bibliographystyle{plain}
+\bibliography{information_flow}
+
+\end{document}

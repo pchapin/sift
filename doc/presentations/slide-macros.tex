@@ -1,0 +1,174 @@
+%
+% For landscape mode slides:
+%
+%  1) use \documentclass[landscape]{slides}
+%  2) dvips -tlandscape slides.dvi -o 
+%
+% This still gets the orientation wrong in the PS file.
+% Only way I found to get a good pdf file was on the mac
+%
+\usepackage{graphics}
+\usepackage{color}
+\usepackage{epsfig}
+
+%\setlength{\oddsidemargin}{-30pt}
+%\setlength{\evensidemargin}{-30pt}
+\setlength{\topmargin}{-0.75in}
+\setlength{\textheight}{7in}
+
+% colour defs
+\input colordvi
+\definecolor{headcolor}     {rgb}{0.55,0,0}
+%\definecolor{itemcolor}    {rgb}{0.1,0.1,0.55}
+%\definecolor{itemcolor}    {named}{SkyBlue}
+%\definecolor{tickmarkcolor}{rgb}{0.5,0.1,0.5}
+%\definecolor{tickmarkcolor}{named}{SkyBlue}
+%\definecolor{titlecolor}   {rgb}{0.65,0.1,0.1}
+%\definecolor{titlecolor}   {rgb}{0.7,0.5,0.9}
+%\definecolor{tickmarkcolor}{rgb}{0.7,0.5,0.9}
+%\definecolor{emphcolor}    {rgb}{0.7,0.5,0.9}
+%\definecolor{titlecolor}   {rgb}{0.8,0.7,0.2}
+%\definecolor{tickmarkcolor}{rgb}{0.85,0.84,0.1}
+\definecolor{titlecolor}    {cmyk}{0.98,.3,0,0.43}
+\definecolor{tickmarkcolor} {cmyk}{0.98,.3,0,0.43}
+%\definecolor{emphcolor}    {rgb}{1.0,0.6,0.3}
+%\definecolor{emphcolor}     {named}{BrickRed}
+\definecolor{refcolor}      {rgb}{0.,.4,.4}
+%\def\Red#1{\Color{0 0.70 0.70 0.2}{#1}}
+%\def\Green#1{\Color{0.70 0 0.5 0.2}{#1}}
+%\def\Blue#1{\Color{0.70 0 0 0.2}{#1}}
+\definecolor{Beige}         {rgb}{0.96,0.96,0.86}
+%\definecolor{Background}    {rgb}{.97,.94,0.82}
+\definecolor{Background}    {rgb}{1.,1.,1.}
+\definecolor{MyYellow}      {rgb}{1.,0.84,0.8}
+\definecolor{Gold}          {rgb}{1.0,0.84,0.}
+%\definecolor{White}         {named}{White}
+%\definecolor{DarkGold}      {rgb}{.5,0.42,0.}
+\definecolor{DarkGold}      {rgb}{.3,0.28,0.}
+\definecolor{Blue}          {rgb}{0.,0.,1.}
+\definecolor{Pink}          {rgb}{1.,0.75,0.8}
+\definecolor{light-blue}    {rgb}{0.8,0.85,1}
+\definecolor{mygrey}        {gray}{0.75}
+\definecolor{darkgrey}      {gray}{0.40}
+%\definecolor{greenyellow}   {named}{GreenYellow}
+%\definecolor{myblack}       {named}{Black}
+
+% Existing color names:
+%
+% GreenYellow, Yellow, Goldenrod, Dandelion, Apricot, Peach, Melon,
+% YellowOrange, Orange, BurntOrange, Bittersweet, RedOrange, Mahogany,
+% Maroon, BrickRed, Red, OrangeRed, RubineRed, WildStrawberry, Salmon,
+% CarnationPink, Magenta, VioletRed, Rhodamine, Mulberry, RedViolet,
+% Fuchsia, Lavender, Thistle, Orchid, DarkOrchid, Purple, Plum, Violet,
+% RoyalPurple, BlueViolet, Periwinkle, CadetBlue, CornflowerBlue,
+% MidnightBlue, NavyBlue, RoyalBlue, Blue, Cerulean, Cyan, ProcessBlue,
+% SkyBlue, Turquoise, TealBlue, Aquamarine, BlueGreen, Emerald,
+% JungleGreen, SeaGreen, Green, ForestGreen, PineGreen, LimeGreen,
+% YellowGreen, SpringGreen, OliveGreen, RawSienna, Sepia, Brown, Tan,
+% Gray, Black, White.
+
+% new tick marks for itemize
+\renewcommand{\labelitemi}{ {\color{tickmarkcolor}$\bullet$} }
+
+% new tick marks for itemize
+\renewcommand{\labelenumi}{
+        {\color{tickmarkcolor} \arabic{enumi}}
+}
+
+% color versions of itemize/enumerate with less spacing
+\newenvironment{citemize}{
+        \vspace{-0.2in}
+        \begin{itemize}
+        \itemsep 0in
+        %\color{itemcolor}
+}{
+        \end{itemize}
+}
+
+\newenvironment{cenumerate}{
+        \vspace{-0.2in}
+        \begin{enumerate}
+        \itemsep 0in
+        %\color{itemcolor}
+}{
+        \end{enumerate}
+}
+
+% headed slide takes 1 parameter: the heading of the slide, which will
+% appear at the topright of the page
+\newenvironment{hslide}[1]{
+        \begin{slide}
+        \begin{flushright}
+                {\color{headcolor} \tiny #1}
+        \end{flushright}
+}{
+        \end{slide}
+}
+
+% titled slide takes 1 parameter: the heading of the slide, which will
+% appear at the topright of the page
+\newenvironment{tslide}[1]{
+        \begin{slide}
+        \begin{flushleft}
+                {\bf \color{headcolor} #1}
+        \end{flushleft}
+}{
+        \end{slide}
+}
+
+% title - displayed as emphasised
+\newcommand{\stitle}[1]{
+        { \bf \color{titlecolor} #1 }
+}
+
+% comments
+\newcommand{\mknote}[1]{
+        \begin{note}
+                \begin{flushright}
+                        {\it NOTES}
+                \end{flushright}
+                {\scriptsize #1
+                
+                end}
+        \end{note}
+}
+
+% end web borrowed macros
+
+\def\cemph#1{{\color{emphcolor}\emph{#1}}}
+\def\cref#1{{\color{refcolor}\small\emph{#1}}}
+%\usepackage{times}
+%\usepackage{mathptmx}
+%%% beat slides class fonts into submission
+%%% first, use most of package times
+%%\renewcommand{\sfdefault}{phv}
+%%\renewcommand{\rmdefault}{ptm}
+%%\renewcommand{\ttdefault}{pcr}
+%%% then, use most of package mathptm
+%%\DeclareSymbolFont{operators}   {OT1}{ptmcm}{m}{n}
+%%\DeclareSymbolFont{letters}     {OML}{ptmcm}{m}{it}
+%%\DeclareSymbolFont{symbols}     {OMS}{pzccm}{m}{n}
+%%\DeclareSymbolFont{largesymbols}{OMX}{psycm}{m}{n}
+%%\DeclareSymbolFont{bold}        {OT1}{ptm}{bx}{n}
+%%\DeclareSymbolFont{italic}      {OT1}{ptm}{m}{it}
+%\setlength{\oddsidemargin}{-30pt}
+%\setlength{\evensidemargin}{-30pt}
+%\setlength{\textwidth}{7.4in}
+
+%\long\def\inlong#1{{\def\titlefont{\it}{\it #1}}}
+%\long\def\inlong#1{}
+% slide macro abbreviations
+\def\centerheader#1{\begin{center}
+ {{\large\titlefont\color{titlecolor}#1}\par\vskip 1.5ex}
+ \end{center}}
+\def\titlefont{\bf}
+
+\def\startslide#1{
+\begin{slide}
+\if !#1
+ \else \centerheader{#1}
+\fi
+}
+\def\stopslide{\end{slide}}
+
+\newcounter{section} % make macro files load without complaining

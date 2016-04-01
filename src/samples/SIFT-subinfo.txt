@@ -1,0 +1,42 @@
+#
+# SIFT-subinfo.txt
+#
+# This file contains subprogram information provided by the programmer.
+# SIFT reads this file and uses it to initialize its internal subprogram
+# database.
+#
+# Each non-comment, non-blank line provides information about one sub-
+# program. The fully qualified name of the subprogram is first on the
+# line (currently no leading spaces are allowed), immediately followed
+# by a ':'. Following the ':' one or more classification codes must
+# appear.
+#
+# 'O' : Output subprogram. It is an error to send Tainted data to such
+#       a subprogram.
+#
+# 'I' : Input subprogram. Any values returned by this subprogram are
+#       tainted regardless of the inputs.
+#
+# 'S' : Sanitizing subprogram. Any values returned by this subprogram are
+#       NOT tainted regardless of the inputs.
+#
+# 'P' : Passive subprogram. If any input to this subprogram is tainted
+#       all the outputs are tainted; otherwise the outputs are NOT
+#       tainted.
+#
+# The I, S, and P classifications are mutually exclusive. The O class-
+# ification can be applied to any of the other subprogram types.
+# Subprograms not listed here are taken as passive by default. Operators,
+# both built-in and user defined, are treated uniformly. For example
+# Standard."+" refers to function "+" in package Standard.
+#
+# Overloaded subprogram names are treated identically. That is, all
+# subprogrms with the same name will get the same classification. This
+# is not ideal, but it represents a limitation with the current version
+# of ATC and not on the analysis technique ATC uses.
+#
+
+Get: I
+Put: O
+Clean: S
+F: S
