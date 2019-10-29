@@ -1,2 +1,7 @@
 src/Debug/*
 src/Release/*
+
+ATC.aux
+ATC.log
+ATC.pdf
+
